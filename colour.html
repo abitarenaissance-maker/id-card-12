@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>EPU ID - Search & Print</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        :root { --epu-blue: #0d2558; --epu-gold: #d4af37; }
+        body { font-family: sans-serif; background: #f0f2f5; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        
+        .controls { background: white; padding: 20px; border-radius: 12px; width: 100%; max-width: 550px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 25px; text-align: center; position: sticky; top: 10px; z-index: 100; }
+        
+        /* Search Box Styling */
+        .search-box { width: 90%; padding: 15px; margin: 10px 0; border: 3px solid var(--epu-gold); border-radius: 8px; font-size: 18px; text-align: center; font-weight: bold; }
+        
+        .btn { width: 100%; padding: 14px; margin: 5px 0; border: none; border-radius: 8px; color: white; font-weight: bold; cursor: pointer; }
+        .btn-sync { background: var(--epu-blue); }
+        .btn-all { background: #059669; }
+
+        .card-container { display: flex; gap: 20px; margin-bottom: 40px; border-bottom: 2px dashed #ccc; padding-bottom: 20px; }
+        /* Hidden class for search filtering */
+        .hidden { display: none !important; }
+        
+        .id-card { width: 500px; height: 350px; background: white; border-radius: 4px; overflow: hidden; position: relative; border: 1px solid #000; display: flex; flex-direction: column; }
+        .header { height: 70px; background: var(--epu-blue); color: white; display: flex; align-items: center; padding: 0 15px; border-bottom: 3px solid var(--epu-gold); }
+        .card-body { flex: 1; display: flex; align-items: center; padding: 15px; position: relative; }
+        .main-photo { width: 130px; height: 160px; border: 2px solid var(--epu-blue); border-radius: 4px; object-fit: cover; z-index: 5; margin-right: 20px; }
+        .student-name { font-size: 22px; font-weight: 900; color: #000; text-transform: uppercase; }
+        .footer { background: #f8fafc; height: 30px; border-top: 1px solid #eee; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; color: var(--epu-blue); }
+
+        .back-content { padding: 30px; display: flex; flex-direction: column; justify-content: space-between; height: 100%; box-sizing: border-box; }
+        .term-row { font-size: 22px; font-family: 'Courier New', monospace; border-bottom: 1px solid #000; margin-bottom: 12px; padding-bottom: 5px; }
+        .amharic-notice { font-size: 18px; text-align: center; color: #d00; font-weight: bold; line-height: 1.4; }
+    </style>
+</head>
+<body>
+
+    <div class="controls">
+        <h2 style="color:var(--epu-blue); margin-bottom:5px;">EPU ID Search & Print</h2>
+        <button class="btn btn-sync" onclick="sync()">1. Load Database</button>
+        
+        <input type="text" id="searchInput" class="search-box" placeholder="Type ID Number to Search..." onkeyup="filterCards()">
+        
+        <p id="stats" style="font-size:12px; color:#666;"></p>
+        <button class="btn btn-all" onclick="generatePDF()">2. Download Visible Cards (PDF)</button>
+    </div>
+
+    <div id="container"></div>
+
+    <script>
+        const SB_URL = 'https://pxyzlrqylkdzqkxfnvwd.supabase.co';
+        const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB4eXpscnF5bGtkenFreGZudndkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMTY3NTgsImV4cCI6MjA4ODg5Mjc1OH0.LKTTxUtsN_CMhsn7bpcbRJ-RNWDM7vaAIATkjBDym_4';
+        const client = supabase.createClient(SB_URL, SB_KEY);
+
+        async function sync() {
+            const { data } = await client.from('students').select('*');
+            const container = document.getElementById('container');
+            container.innerHTML = "";
+            
+            const seenSuffixes = new Set();
+            const uniqueList = [];
+
+            data.forEach(s => {
+                let fullID = s.student_id ? String(s.student_id) : String(s.id);
+                let onlyNumbers = fullID.replace(/\D/g, '');
+                let suffix = onlyNumbers.slice(-5);
+                if (onlyNumbers.length < 5) suffix = onlyNumbers;
+
+                if (!seenSuffixes.has(suffix)) {
+                    seenSuffixes.add(suffix);
+                    uniqueList.push({...s, displayID: fullID});
+                }
+            });
+
+            document.getElementById('stats').innerText = `Found ${uniqueList.length} unique records.`;
+
+            uniqueList.forEach(s => {
+                container.innerHTML += `
+                    <div class="card-container" data-search-id="${s.displayID}">
+                        <div class="id-card front">
+                            <div class="header">
+                                <div style="font-size:14px; color:var(--epu-gold); font-weight:bold;">Ethiopian Police University</div>
+                            </div>
+                            <div class="card-body">
+                                <img src="${s.photo_url}" class="main-photo" crossorigin="anonymous">
+                                <div class="details">
+                                    <div class="student-name">${s.name}</div>
+                                    <div style="background:var(--epu-blue); color:var(--epu-gold); padding:3px 8px; border-radius:4px; font-size:10px; font-weight:bold; display:inline-block; margin:5px 0;">TVET STUDENT</div><br>
+                                    <div style="font-family:monospace; font-weight:bold; background:#eee; padding:6px; border-radius:4px; font-size:16px;">ID: EPU-TVET-${s.displayID}</div>
+                                </div>
+                            </div>
+                            <div class="footer">"Protect With Courage; Serve With Compassion!"</div>
+                        </div>
+
+                        <div class="id-card back">
+                            <div class="back-content">
+                                <div>
+                                    <div class="term-row">First term ________________</div>
+                                    <div class="term-row">Second term _______________</div>
+                                    <div class="term-row">Third term ________________</div>
+                                    <div class="term-row">Fourth term _______________</div>
+                                </div>
+                                <div class="amharic-notice">
+                                    የዚህ መታወቂያ ወድቆ ካገኙ <br> 0111111198 ላይ ይደውሉ!!
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+            });
+        }
+
+        // --- NEW SEARCH FUNCTION ---
+        function filterCards() {
+            const input = document.getElementById('searchInput').value.toLowerCase();
+            const cards = document.querySelectorAll('.card-container');
+            
+            cards.forEach(card => {
+                const id = card.getAttribute('data-search-id').toLowerCase();
+                if (id.includes(input)) {
+                    card.classList.remove('hidden');
+                } else {
+                    card.classList.add('hidden');
+                }
+            });
+        }
+
+        async function generatePDF() {
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            
+            // Only select cards that are NOT hidden by search
+            const visibleFronts = Array.from(document.querySelectorAll('.card-container:not(.hidden) .front'));
+            const visibleBacks = Array.from(document.querySelectorAll('.card-container:not(.hidden) .back'));
+
+            if (visibleFronts.length === 0) return alert("No cards found to print!");
+
+            // Print Fronts
+            for (let i = 0; i < visibleFronts.length; i++) {
+                if (i > 0 && i % 4 === 0) pdf.addPage();
+                const canvas = await html2canvas(visibleFronts[i], { scale: 2, useCORS: true });
+                const col = i % 2;
+                const row = Math.floor(i / 2) % 2;
+                pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 5 + (col * 102), 10 + (row * 72), 100, 70);
+            }
+            
+            // Print Backs
+            pdf.addPage();
+            for (let i = 0; i < visibleBacks.length; i++) {
+                if (i > 0 && i % 4 === 0) pdf.addPage();
+                const canvas = await html2canvas(visibleBacks[i], { scale: 2 });
+                const col = i % 2;
+                const row = Math.floor(i / 2) % 2;
+                pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 5 + (col * 102), 10 + (row * 72), 100, 70);
+            }
+
+            pdf.save("EPU_Search_Results.pdf");
+        }
+    </script>
+</body>
+</html>
